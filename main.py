@@ -184,6 +184,7 @@ async def main() -> None:
         def stop_program():
             logger.warning("Stopping...")
             loop.stop()
+            loop.close()
 
         logger.info("Waiting for events...")
 
@@ -194,6 +195,8 @@ async def main() -> None:
             await asyncio.sleep(5)
 
         logger.warning("Exiting. Spa state " + str(spaman.spa_state))
+        stop_program()
+
 
 
 
