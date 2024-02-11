@@ -10,6 +10,9 @@ RUN addgroup -S appuser && adduser -S -G appuser appuser
 # Change ownership of the application code to the non-root user
 RUN chown -R appuser:appuser /app
 
+# Install git and any required dependencies
+RUN apk update && apk add git
+
 # Switch to the non-root user
 USER appuser
 
