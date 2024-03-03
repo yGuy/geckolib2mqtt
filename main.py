@@ -80,17 +80,26 @@ async def main() -> None:
 
         mqtt_prefix = "intouch2/" + spaman.facade.name + "/"
 
+        stopped = False
+
         async def listen():
+            nonlocal stopped
             async with client.messages() as messages:
                 await client.subscribe(mqtt_prefix + "#")
-                async for message in messages:
-                    topic_value = message.topic.value
-                    logger.debug("Received mqtt message for topic " + topic_value)
-                    action = set_actions.get(topic_value)
-                    if action is not None:
-                        param = message.payload.decode()
-                        logger.info("Executing action for " + topic_value + " -> " + param)
-                        await action(param)
+                try:
+                    async for message in messages:
+                        topic_value = message.topic.value
+                        logger.debug("Received mqtt message for topic " + topic_value)
+                        action = set_actions.get(topic_value)
+                        if action is not None:
+                            param = message.payload.decode()
+                            logger.info("Executing action for " + topic_value + " -> " + param)
+                            await action(param)
+                except aiomqtt.MqttError as e:
+                    # check if message contains "disconnected" string log if otherwise
+                    if not str(e) == "Disconnected during message iteration":
+                        logger.error(f"An MqttError occurred: {e} - stopping")
+                    stopped = True
 
         asyncio.ensure_future(listen())
 
@@ -181,23 +190,24 @@ async def main() -> None:
         spaman.facade.water_heater.watch(lambda src, old, _: loop.create_task(publish_heater()))
         spaman.facade.water_care.watch(lambda src, old, _: loop.create_task(publish_water_care()))
 
+
         def stop_program():
+            nonlocal stopped
             logger.warning("Stopping...")
-            loop.stop()
-            loop.close()
+            stopped = True
 
         logger.info("Waiting for events...")
 
         for signame in ('SIGINT', 'SIGTERM'):
             loop.add_signal_handler(getattr(signal, signame), stop_program)
 
-        while spaman.spa_state.value <= GeckoSpaState.CONNECTED.value:
+        while spaman.spa_state.value <= GeckoSpaState.CONNECTED.value and not stopped:
             await asyncio.sleep(5)
 
-        logger.warning("Exiting. Spa state " + str(spaman.spa_state))
-        stop_program()
+        await spaman.facade.disconnect()
+        await client.disconnect(timeout=1)
 
-
+        logger.warning("Exiting.")
 
 
 if __name__ == "__main__":
